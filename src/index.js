@@ -19,13 +19,13 @@ function getCardNumbers(message) {
   console.log(`getCardNumber(${message})`);
   console.log(`Trello ID match pattern ${trelloCardIdPattern}`)
   let ids = message && message.length > 0 ? message.replace(regexPullRequest, "").match(new RegExp(`${trelloCardIdPattern}\\d+`, 'g')) : [];
-  return ids && ids.length > 0 ? ids.map(x => x.replace(trelloCardIdPattern, '')) : null;
+  return ids && ids.length > 0 ? ids.map(x => x.replace(trelloCardIdPattern, '')) : [];
 }
 
 function getAllCardNumbers(message, branch) {
   const cardBranch = getCardNumbers(message);
   const cardMessage = getCardNumbers(branch);
-  if (cardBranch == null || cardMessage == null) {
+  if (!cardBranch || !cardMessage) {
     throw new Error("PR title or branch name does not meet the guidelines");
   }
   return new Set([...cardBranch, ...cardMessage]);
@@ -145,29 +145,43 @@ async function handleHeadCommit(data) {
 
 async function handlePullRequest(data) {
   console.log("handlePullRequest", data);
-  let url = data.html_url || data.url;
-  let message = data.title;
-  let user = data.user.name;
-  let branch = data.head.ref;
-  let cardsNumbers = getAllCardNumbers(message, branch);
-  cardsNumbers.forEach(async cardNumber => {
-
-  let card = await getCardOnBoard(trelloBoardId, cardNumber);
-    if (card && card.length > 0) {
-      if (trelloCardAction && trelloCardAction.toLowerCase() == 'attachment') {
-        await addAttachmentToCard(card, url);
-      }
-      else if (trelloCardAction && trelloCardAction.toLowerCase() == 'comment') {
-        await addCommentToCard(card, user, message, url);
-      }
-      if (data.state == "open" && trelloListNamePullRequestOpen && trelloListNamePullRequestOpen.length > 0) {
-        await moveCardToList(trelloBoardId, card, trelloListNamePullRequestOpen);
-      }
-      else if (data.state == "closed" && trelloListNamePullRequestClosed && trelloListNamePullRequestClosed.length > 0) {
-        await moveCardToList(trelloBoardId, card, trelloListNamePullRequestClosed);
-      }
+  const url = data.html_url || data.url;
+  const message = data.title;
+  const user = data.user.name;
+  const branch = data.head.ref;
+  try {
+    const cardsNumbers = getAllCardNumbers(message, branch);
+    if (!cardsNumbers.size) {
+      console.log('No card numbers found');
+      return;
     }
-  });
+    cardsNumbers.forEach(async cardNumber => {
+  
+    const card = await getCardOnBoard(trelloBoardId, cardNumber);
+      if (card && card.length > 0) {
+        if (trelloCardAction && trelloCardAction.toLowerCase() == 'attachment') {
+          await addAttachmentToCard(card, url);
+        }
+        else if (trelloCardAction && trelloCardAction.toLowerCase() == 'comment') {
+          await addCommentToCard(card, user, message, url);
+        }
+        if (data.state == "open" && trelloListNamePullRequestOpen && trelloListNamePullRequestOpen.length > 0) {
+          await moveCardToList(trelloBoardId, card, trelloListNamePullRequestOpen);
+        }
+        else if (data.state == "closed" && trelloListNamePullRequestClosed && trelloListNamePullRequestClosed.length > 0) {
+          await moveCardToList(trelloBoardId, card, trelloListNamePullRequestClosed);
+        }
+      }
+    });
+  } catch (error) {
+    console.error(
+      typeof error === 'string'
+        ? error
+        : typeof error === 'object' 
+          ? error.message
+          : 'Unknown error'
+    );
+  }
 }
 
 async function run() {
